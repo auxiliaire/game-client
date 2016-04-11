@@ -26,7 +26,7 @@ class PlayCommand extends ContainerAwareCommand
         $this
             ->setName('app:play_command')
             ->addOption('auto', 'a', InputOption::VALUE_NONE, "Auto playing (no interaction)")
-            ->setDescription('Hello PhpStorm');
+            ->setDescription('Game of Three client (a server should run to play)');
     }
 
     /**
@@ -84,72 +84,92 @@ class PlayCommand extends ContainerAwareCommand
                         });
                         $question = new ChoiceQuestion('<q>Choose control (auto):</q>', array('auto' => 'auto', 'manual' => 'manual'), 'auto');
                         $control = $helper->ask($input, $output, $question);
-                        $output->write("Creating player...");
-                        $player = $this->apiClient->createPlayer($availableGame->id, $name, $control);
-                        $output->writeln("Done!");
-                        if (count($availableGame->players) < 2) {
-                            $output->write("Waiting for other players to join (Ctrl-C to terminate)...");
-                            $availableGame = $this->apiClient->getGame($availableGame->id);
-                            while (count($availableGame->players) < 2) {
-                                sleep(1);
-                                $availableGame = $this->apiClient->getGame($availableGame->id);
-                            }
-                        }
-                        $output->writeln("Done!");
-                        $player = $this->apiClient->getPlayer($player->id);
-                        $opponent = $this->apiClient->getPlayer($player->opponent);
-                        $opponentMoveCount = count($opponent->moves);
-                        if ($player->canStart) {
-                            $number = rand(2, 100);
-                            $this->apiClient->createMove($player->id, $number);
-                            $output->writeln("Initial move with number " . $number);
-                            $opponentStarts = false;
-                        } else {
-                            $opponentStarts = true;
-                        }
-                        while (!$availableGame->over) {
-                            $number = $availableGame->currentNumber;
-                            if ($player->hasTurn) {
-                                $opponentCurrentMoveCount = count($opponent->moves);
-                                if ($opponentCurrentMoveCount > $opponentMoveCount) {
-                                    $opponentMoveCount = $opponentCurrentMoveCount;
-                                    $moveId = $opponent->moves[$opponentMoveCount - 1];
-                                    $om = $this->apiClient->getMove($moveId);
-                                    if ($opponentStarts) {
-                                        $output->writeln("<q>Opponent's initial move: \t{$om->number}</q>");
-                                        $opponentStarts = false;
-                                    } else {
-                                        $output->writeln("<q>Opponent's move: \t{$om->number} + {$om->step} = {$om->calculatedNumber}\t=>\t{$om->nextNumber}</q>");
-                                    }
-                                }
-                                $move = $this->apiClient->createMove($player->id, $number);
-                                $this->assertMoveExists($move, $output);
-                                $output->writeln("Player's move: \t\t{$move->number} + {$move->step} = {$move->calculatedNumber}\t=>\t{$move->nextNumber}");
-                            }
-                            // Updating entities:
-                            $player = $this->apiClient->getPlayer($player->id);
-                            $opponent = $this->apiClient->getPlayer($opponent->id);
-                            $availableGame = $this->apiClient->getGame($availableGame->id);
-                            sleep(1);
-                        }
-                        if ($player->isWinner) {
-                            $output->writeln("<g>YOU WON!</g>");
-                        } else {
-                            $output->writeln("<q>You lost.</q>");
-                        }
-                        $output->writeln("Game over!");
-                        
+                        $player = $this->createPlayer($availableGame, $name, $control, $output);
+
+                        $this->main($availableGame, $player, $output, $io);
+
                         break;
                 }
             } else {
                 if (!$availableGame) {
                     $availableGame = $this->createGame($output);
                 }
+                $playerNum = (count($availableGame->players)? 'Two': 'One');
+                $player = $this->createPlayer($availableGame, "Player$playerNum", 'auto', $output);
+
+                $this->main($availableGame, $player, $output, $io);
             }
 
         } else {
             // Error
         }
+    }
+
+    private function main($availableGame, $player, OutputInterface $output, SymfonyStyle $io)
+    {
+        if (count($availableGame->players) < 2) {
+            $output->write("Waiting for other players to join (Ctrl-C to terminate)...");
+            $availableGame = $this->apiClient->getGame($availableGame->id);
+            while (count($availableGame->players) < 2) {
+                sleep(1);
+                $availableGame = $this->apiClient->getGame($availableGame->id);
+            }
+        }
+        $output->writeln("Done!");
+        $player = $this->apiClient->getPlayer($player->id);
+        $opponent = $this->apiClient->getPlayer($player->opponent);
+        $opponentMoveCount = count($opponent->moves);
+        if ($player->canStart) {
+            $number = rand(2, 100);
+            $this->apiClient->createMove($player->id, $number);
+            $output->writeln("Initial move with number " . $number);
+            $opponentStarts = false;
+        } else {
+            $opponentStarts = true;
+        }
+        while (!$availableGame->over) {
+            $number = $availableGame->currentNumber;
+            if ($player->hasTurn) {
+                $opponentCurrentMoveCount = count($opponent->moves);
+                if ($opponentCurrentMoveCount > $opponentMoveCount) {
+                    $opponentMoveCount = $opponentCurrentMoveCount;
+                    $moveId = $opponent->moves[$opponentMoveCount - 1];
+                    $om = $this->apiClient->getMove($moveId);
+                    if ($opponentStarts) {
+                        $output->writeln("<q>Opponent's initial move: \t{$om->number}</q>");
+                        $opponentStarts = false;
+                    } else {
+                        $output->writeln("<q>Opponent's move: \t{$om->number} + {$om->step} = {$om->calculatedNumber}\t=>\t{$om->nextNumber}</q>");
+                    }
+                }
+                $step = null;
+                if ($player->control == 'manual') {
+                    while (is_null($step) || ($step === 'e')) {
+                        $step = $io->ask("Where do you move?", null, function ($step) use ($number, $output) {
+                            if (!in_array($step, array(-1, 0, 1)) || (($number + $step) % 3 != 0)) {
+                                $output->writeln("<e>Invalid step! Choose a number between -1 and 1 that adding to the number will result a sum that is dividable by three without modulus.</e>");
+                                $step = 'e';
+                            }
+                            return $step;
+                        });
+                    }
+                }
+                $move = $this->apiClient->createMove($player->id, $number, (int)$step);
+                $this->assertMoveExists($move, $output);
+                $output->writeln("Player's move: \t\t{$move->number} + {$move->step} = {$move->calculatedNumber}\t=>\t{$move->nextNumber}");
+            }
+            // Updating entities:
+            $player = $this->apiClient->getPlayer($player->id);
+            $opponent = $this->apiClient->getPlayer($opponent->id);
+            $availableGame = $this->apiClient->getGame($availableGame->id);
+            sleep(1);
+        }
+        if ($player->isWinner) {
+            $output->writeln("<g>YOU WON!</g>");
+        } else {
+            $output->writeln("<q>You lost.</q>");
+        }
+        $output->writeln("Game over!");
     }
 
     private function createGame(OutputInterface $output, $message = "Creating game...")
@@ -161,11 +181,37 @@ class PlayCommand extends ContainerAwareCommand
         return $availableGame;
     }
 
+    /**
+     * @param $availableGame
+     * @param $name
+     * @param $control
+     * @param OutputInterface $output
+     * @return \AppBundle\GameOfThree\Response\PlayerResponse|null
+     */
+    private function createPlayer($availableGame, $name, $control, OutputInterface $output)
+    {
+        $output->write("Creating player...");
+        $player = $this->apiClient->createPlayer($availableGame->id, $name, $control);
+        $this->assertPlayerExists($player, $output);
+        $output->writeln("Done!");
+        return $player;
+    }
+
     private function assertGameExists($availableGame, OutputInterface $output)
     {
         if (!$availableGame) {
             $output->writeln(PHP_EOL . "<e>FATAL! Cannot create game.</e>");
             $output->writeln(var_export($availableGame, true));
+            $this->dumpError($output);
+            exit;
+        }
+    }
+
+    private function assertPlayerExists($player, OutputInterface $output)
+    {
+        if (!$player) {
+            $output->writeln(PHP_EOL . "<e>FATAL! Cannot create player.</e>");
+            $output->writeln(var_export($player, true));
             $this->dumpError($output);
             exit;
         }
