@@ -102,6 +102,7 @@ class PlayCommand extends ContainerAwareCommand
 
         } else {
             // Error
+            $this->dumpError($output);
         }
     }
 
