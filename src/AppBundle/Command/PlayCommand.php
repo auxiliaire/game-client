@@ -64,7 +64,15 @@ class PlayCommand extends ContainerAwareCommand
             $io->table(array('Id', 'available', 'over'), $gameArray);
 
             $auto = $input->getOption('auto');
-            if (!$auto) {
+            if ($auto) {
+                if (!$availableGame) {
+                    $availableGame = $this->createGame($output);
+                }
+                $playerNum = (count($availableGame->players)? 'Two': 'One');
+                $player = $this->createPlayer($availableGame, "Player$playerNum", 'auto', $output);
+
+                $this->main($availableGame, $player, $output, $io);
+            } else {
                 $helper = $this->getHelper('question');
                 $question = new ChoiceQuestion('<q>Choose action:</q> ', array('j' => 'join', 'c' => 'create'));
                 $action = $helper->ask($input, $output, $question);
@@ -90,14 +98,6 @@ class PlayCommand extends ContainerAwareCommand
 
                         break;
                 }
-            } else {
-                if (!$availableGame) {
-                    $availableGame = $this->createGame($output);
-                }
-                $playerNum = (count($availableGame->players)? 'Two': 'One');
-                $player = $this->createPlayer($availableGame, "Player$playerNum", 'auto', $output);
-
-                $this->main($availableGame, $player, $output, $io);
             }
 
         } else {
@@ -114,13 +114,25 @@ class PlayCommand extends ContainerAwareCommand
                 sleep(1);
                 $availableGame = $this->apiClient->getGame($availableGame->id);
             }
+            $output->writeln("Done!");
         }
-        $output->writeln("Done!");
         $player = $this->apiClient->getPlayer($player->id);
         $opponent = $this->apiClient->getPlayer($player->opponent);
         $opponentMoveCount = count($opponent->moves);
         if ($player->canStart) {
-            $number = rand(2, 100);
+            if ($player->control == 'auto') {
+                $number = rand(Client::RANGE_MIN, Client::RANGE_MAX);
+            } else {
+                while (!isset($number) || ($number === -2)) {
+                    $number = $io->ask("What's your initial move?", null, function ($number) use ($output) {
+                        if (!is_numeric($number) || !(($number >= Client::RANGE_MIN) && ($number <= Client::RANGE_MAX))) {
+                            $output->writeln("<e>Invalid move! Value should be between " . Client::RANGE_MIN . " and " . Client::RANGE_MAX . " inclusive.</e>");
+                            $number = '-2';
+                        }
+                        return (int)$number;
+                    });
+                }
+            }
             $this->apiClient->createMove($player->id, $number);
             $output->writeln("Initial move with number " . $number);
             $opponentStarts = false;
@@ -144,17 +156,17 @@ class PlayCommand extends ContainerAwareCommand
                 }
                 $step = null;
                 if ($player->control == 'manual') {
-                    while (is_null($step) || ($step === 'e')) {
+                    while (is_null($step) || ($step === -2)) {
                         $step = $io->ask("Where do you move?", null, function ($step) use ($number, $output) {
                             if (!in_array($step, array(-1, 0, 1)) || (($number + $step) % 3 != 0)) {
                                 $output->writeln("<e>Invalid step! Choose a number between -1 and 1 that adding to the number will result a sum that is dividable by three without modulus.</e>");
-                                $step = 'e';
+                                $step = '-2';
                             }
-                            return $step;
+                            return (int)$step;
                         });
                     }
                 }
-                $move = $this->apiClient->createMove($player->id, $number, (int)$step);
+                $move = $this->apiClient->createMove($player->id, $number, $step);
                 $this->assertMoveExists($move, $output);
                 $output->writeln("Player's move: \t\t{$move->number} + {$move->step} = {$move->calculatedNumber}\t=>\t{$move->nextNumber}");
             }

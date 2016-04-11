@@ -30,6 +30,9 @@ class Client
     const P_PLAYERS = 'players';
     const P_MOVES   = 'moves';
 
+    const RANGE_MIN = 2;
+    const RANGE_MAX = 100;
+
     /**
      * @var RestClient
      */
