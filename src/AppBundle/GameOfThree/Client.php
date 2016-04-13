@@ -20,7 +20,9 @@ use Symfony\Component\HttpFoundation\Response;
 
 class Client
 {
-    const API_URL = 'http://localhost:8000/';
+    // The web server (nginx) listens to game-api.dev www.game-api.dev 127.0.0.1 localhost
+    // To use with named domains the domain has to be present in the hosts file referring to 127.0.0.1
+    const API_URL = 'http://game-api.dev:8000/';
 
     const K_MEMBER      = 'hydra:member';
     const K_TITLE       = 'hydra:title';

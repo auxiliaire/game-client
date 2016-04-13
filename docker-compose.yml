@@ -1,0 +1,6 @@
+php:
+  build: docker/php
+  volumes:
+    - ./:/app
+  working_dir: /app
+  net: "host"
