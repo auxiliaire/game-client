@@ -22,6 +22,15 @@ Usage
 2. Provide input if required.
 3. Wait the second client to join (Run the same way in a different terminal window or tab.)
 
+Docker support
+--------------
+
+0. Make sure server is running properly (https://github.com/auxiliaire/game-api).
+1. Run `docker-compose build` in client project root to create container from preconfigured files.
+2. Start client one using a command like this `docker run -it --rm --net host --name gameclient_php_2 -v "$PWD":/app -w /app php:7.0-cli php bin/console app:play`. (Alternatively you can add the -a switch to avoid interaction and run auto mode.)
+3. Start client two using a similar command (with different name): `docker run -it --rm --net host --name gameclient_php_3 -v "$PWD":/app -w /app php:7.0-cli php bin/console app:play`.
+4. The clients will stop automatically after finishing the game.
+
 Notice
 ------
 
